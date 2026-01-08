@@ -28,12 +28,27 @@
 #include <utility>
 
 namespace MOTION {
+
+// Forward declarations
+namespace Communication {
+  class CommunicationLayer;
+  struct TransportStatistics;
+}
+
 namespace Statistics {
 
 struct RunTimeStats {
   using clock_type = std::chrono::steady_clock;
   using time_point = std::chrono::time_point<clock_type>;
   using time_point_pair = std::pair<time_point, time_point>;
+
+  // Network statistics structure
+  struct NetworkStats {
+    std::uint64_t bytes_sent = 0;
+    std::uint64_t bytes_received = 0;
+    std::uint64_t messages_sent = 0;
+    std::uint64_t messages_received = 0;
+  };
 
   enum class StatID : std::size_t {
     mt_presetup,
@@ -66,11 +81,27 @@ struct RunTimeStats {
     // data_.at(static_cast<std::size_t>(ID)).second = clock_type::now();
   }
 
+  // Network measurement methods
+  template <StatID ID>
+  void record_network_start(Communication::CommunicationLayer& comm);
+
+  template <StatID ID>
+  void record_network_end(Communication::CommunicationLayer& comm);
+
   const time_point_pair& get(StatID id) const;
+  const NetworkStats& get_network_stats(StatID id) const;
 
   std::string print_human_readable() const;
 
-  std::array<time_point_pair, static_cast<std::size_t>(StatID::MAX) + 1> data_;
+  std::array<time_point_pair, static_cast<std::size_t>(StatID::MAX)> data_;
+  std::array<NetworkStats, static_cast<std::size_t>(StatID::MAX)> network_data_;
+
+private:
+  // Helper method to sum transport statistics
+  NetworkStats sum_transport_stats(const std::vector<Communication::TransportStatistics>& stats) const;
+  
+  // Baseline network stats for delta calculation
+  std::array<NetworkStats, static_cast<std::size_t>(StatID::MAX)> network_baselines_;
 };
 
 }  // namespace Statistics

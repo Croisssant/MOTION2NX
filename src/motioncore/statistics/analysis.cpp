@@ -47,6 +47,9 @@ static double compute_duration(const RunTimeStats::time_point_pair& tpp) {
 void AccumulatedRunTimeStats::add(const RunTimeStats& stats) {
   for (std::size_t i = 0; i <= static_cast<std::size_t>(RunTimeStats::StatID::MAX); ++i) {
     accumulators_[i](compute_duration(stats.data_[i]));
+    // Accumulate network statistics
+    bytes_sent_accumulators_[i](stats.network_data_[i].bytes_sent);
+    bytes_received_accumulators_[i](stats.network_data_[i].bytes_received);
   }
   ++count_;
 }
@@ -72,6 +75,30 @@ static std::string format_line(std::string name, std::string unit,
   return ss.str();
 }
 
+static std::string format_line_with_network(std::string name, std::string unit,
+                                           AccumulatedRunTimeStats::accumulator_type time_accumulator,
+                                           AccumulatedRunTimeStats::network_accumulator_type bytes_sent_acc,
+                                           AccumulatedRunTimeStats::network_accumulator_type bytes_recv_acc,
+                                           std::size_t field_width) {
+  std::stringstream ss;
+  ss << fmt::format("{:19s} ", name);
+  ss << fmt::format("{:{}.3f} {:s} ", boost::accumulators::mean(time_accumulator), field_width, unit);
+  
+  // Add network statistics if there's any network activity
+  auto avg_sent = boost::accumulators::mean(bytes_sent_acc);
+  auto avg_recv = boost::accumulators::mean(bytes_recv_acc);
+  if (avg_sent > 0 || avg_recv > 0) {
+    // Convert bytes to MiB (1 MiB = 1048576 bytes)
+    double sent_mib = avg_sent / 1048576.0;
+    double recv_mib = avg_recv / 1048576.0;
+    
+    ss << fmt::format("(Sent: {:.0f} bytes / {:.3f} MiB, Recv: {:.0f} bytes / {:.3f} MiB)", 
+                      avg_sent, sent_mib, avg_recv, recv_mib);
+  }
+  ss << "\n";
+  return ss.str();
+}
+
 std::string AccumulatedRunTimeStats::print_human_readable() const {
   std::size_t field_width = 10;
   std::stringstream ss;
@@ -79,8 +106,7 @@ std::string AccumulatedRunTimeStats::print_human_readable() const {
 
   ss << fmt::format("Run time statistics over {} iterations\n", count_)
      << "---------------------------------------------------------------------------\n"
-     << fmt::format("                    {:>{}s}    {:>{}s}    {:>{}s}\n", "mean", field_width,
-                    "median", field_width, "stddev", field_width)
+     << fmt::format("                    {:>{}s}    Network Traffic\n", "mean", field_width)
      << "---------------------------------------------------------------------------\n"
     //  << format_line("MT Presetup", unit, at(accumulators_, StatID::mt_presetup), field_width)
     //  << format_line("MT Setup", unit, at(accumulators_, StatID::mt_setup), field_width)
@@ -94,8 +120,16 @@ std::string AccumulatedRunTimeStats::print_human_readable() const {
      << "---------------------------------------------------------------------------\n"
     //  << format_line("Preprocessing Total", unit, at(accumulators_, StatID::preprocessing),
                     // field_width)
-    //  << format_line("Gates Setup", unit, at(accumulators_, StatID::gates_setup), field_width)
-     << format_line("Gates Online", unit, at(accumulators_, StatID::gates_online), field_width)
+     << format_line_with_network("Gates Setup", unit, 
+                                at(accumulators_, StatID::gates_setup),
+                                at(bytes_sent_accumulators_, StatID::gates_setup),
+                                at(bytes_received_accumulators_, StatID::gates_setup),
+                                field_width)
+     << format_line_with_network("Gates Online", unit, 
+                                at(accumulators_, StatID::gates_online),
+                                at(bytes_sent_accumulators_, StatID::gates_online),
+                                at(bytes_received_accumulators_, StatID::gates_online),
+                                field_width)
      << "---------------------------------------------------------------------------\n"
      << format_line("Circuit Evaluation", unit, at(accumulators_, StatID::evaluate), field_width);
 
@@ -182,9 +216,10 @@ std::string print_stats(const std::string& experiment_name,
      << print_motion_info()
      << "===========================================================================\n"
      << exec_stats.print_human_readable()
+     << "===========================================================================\n"
+     << "TOTAL PHASE COMMUNICATION:\n"
+     << comm_stats.print_human_readable()
      << "===========================================================================\n";
-    //  << comm_stats.print_human_readable()
-    //  << "===========================================================================\n";
   return ss.str();
 }
 

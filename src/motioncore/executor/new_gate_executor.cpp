@@ -29,6 +29,7 @@
 #include "base/gate_register.h"
 #include "gate/new_gate.h"
 #include "statistics/run_time_stats.h"
+#include "communication/communication_layer.h"
 #include "utility/fiber_thread_pool/fiber_thread_pool.hpp"
 #include "utility/synchronized_queue.h"
 #include "utility/logger.h"
@@ -185,6 +186,161 @@ void NewGateExecutor::evaluate_setup_online_single_threaded(Statistics::RunTimeS
   register_.wait_online();
 
   stats.record_end<Statistics::RunTimeStats::StatID::gates_online>();
+
+  // --------------------------------------------------------------------------
+
+  stats.record_end<Statistics::RunTimeStats::StatID::evaluate>();
+
+  if (logger_) {
+    logger_->LogInfo("Finished with the online phase of the circuit gates (single-threaded)");
+  }
+
+  cleanup_channel.close();
+  cleanup_fut.get();
+}
+
+// Overloaded version with network measurement support
+void NewGateExecutor::evaluate_setup_online(Statistics::RunTimeStats& stats, Communication::CommunicationLayer& comm) {
+  if (num_threads_ == 1) {
+    evaluate_setup_online_single_threaded(stats, comm);
+  } else {
+    evaluate_setup_online_multi_threaded(stats, comm);
+  }
+}
+
+void NewGateExecutor::evaluate_setup_online_multi_threaded(Statistics::RunTimeStats& stats, Communication::CommunicationLayer& comm) {
+  stats.record_start<Statistics::RunTimeStats::StatID::evaluate>();
+
+  preprocessing_fctn_();
+
+  if (logger_) {
+    logger_->LogInfo(
+        "Start evaluating the circuit gates sequentially (online after all finished setup)");
+  }
+
+  // create a pool to execute fibers
+  ENCRYPTO::FiberThreadPool fpool(num_threads_, 2 * register_.get_num_gates());
+
+  // ------------------------------ setup phase ------------------------------
+  stats.record_start<Statistics::RunTimeStats::StatID::gates_setup>();
+  stats.record_network_start<Statistics::RunTimeStats::StatID::gates_setup>(comm);
+
+  if (register_.get_num_gates_with_setup()) {
+    // evaluate the setup phase of all the gates
+    for (auto& gate : register_.get_gates()) {
+      if (gate->need_setup()) {
+        fpool.post([&] {
+          gate->evaluate_setup();
+          register_.increment_gate_setup_counter();
+        });
+      }
+    }
+    register_.wait_setup();
+  }
+
+  stats.record_end<Statistics::RunTimeStats::StatID::gates_setup>();
+  stats.record_network_end<Statistics::RunTimeStats::StatID::gates_setup>(comm);
+
+  if (sync_between_setup_and_online_) {
+    sync_fctn_();
+  }
+
+  if (logger_) {
+    logger_->LogInfo("Start with the online phase of the circuit gates");
+  }
+
+  // ------------------------------ online phase ------------------------------
+  stats.record_start<Statistics::RunTimeStats::StatID::gates_online>();
+  stats.record_network_start<Statistics::RunTimeStats::StatID::gates_online>(comm);
+
+  if (register_.get_num_gates_with_online()) {
+    // evaluate the online phase of all the gates
+    for (auto& gate : register_.get_gates()) {
+      if (gate->need_online()) {
+        fpool.post([&] {
+          gate->evaluate_online();
+          register_.increment_gate_online_counter();
+        });
+      }
+    }
+    register_.wait_online();
+  }
+
+  stats.record_end<Statistics::RunTimeStats::StatID::gates_online>();
+  stats.record_network_end<Statistics::RunTimeStats::StatID::gates_online>(comm);
+
+  // --------------------------------------------------------------------------
+
+  if (logger_) {
+    logger_->LogInfo("Finished with the online phase of the circuit gates");
+  }
+
+  fpool.join();
+
+  stats.record_end<Statistics::RunTimeStats::StatID::evaluate>();
+}
+
+void NewGateExecutor::evaluate_setup_online_single_threaded(Statistics::RunTimeStats& stats, Communication::CommunicationLayer& comm) {
+  stats.record_start<Statistics::RunTimeStats::StatID::evaluate>();
+
+  preprocessing_fctn_();
+
+  ENCRYPTO::SynchronizedFiberQueue<boost::fibers::fiber> cleanup_channel;
+  auto cleanup_fut = boost::fibers::async([&cleanup_channel] {
+    while (auto f = cleanup_channel.dequeue()) {
+      f->join();
+    }
+  });
+
+  if (logger_) {
+    logger_->LogInfo(
+        "Start evaluating the circuit gates sequentially (online after all finished setup) "
+        "(single-threaded)");
+  }
+
+  // ------------------------------ setup phase ------------------------------
+  stats.record_start<Statistics::RunTimeStats::StatID::gates_setup>();
+  stats.record_network_start<Statistics::RunTimeStats::StatID::gates_setup>(comm);
+
+  // evaluate the setup phase of all the gates
+  for (auto& gate : register_.get_gates()) {
+    if (gate->need_setup()) {
+      cleanup_channel.enqueue(boost::fibers::fiber(boost::fibers::launch::dispatch, [&] {
+        gate->evaluate_setup();
+        register_.increment_gate_setup_counter();
+      }));
+    }
+  }
+  register_.wait_setup();
+
+  stats.record_end<Statistics::RunTimeStats::StatID::gates_setup>();
+  stats.record_network_end<Statistics::RunTimeStats::StatID::gates_setup>(comm);
+
+  if (sync_between_setup_and_online_) {
+    sync_fctn_();
+  }
+
+  if (logger_) {
+    logger_->LogInfo("Start with the online phase of the circuit gates (single-threaded)");
+  }
+
+  // ------------------------------ online phase ------------------------------
+  stats.record_start<Statistics::RunTimeStats::StatID::gates_online>();
+  stats.record_network_start<Statistics::RunTimeStats::StatID::gates_online>(comm);
+
+  // evaluate the online phase of all the gates
+  for (auto& gate : register_.get_gates()) {
+    if (gate->need_online()) {
+      cleanup_channel.enqueue(boost::fibers::fiber(boost::fibers::launch::dispatch, [&] {
+        gate->evaluate_online();
+        register_.increment_gate_online_counter();
+      }));
+    }
+  }
+  register_.wait_online();
+
+  stats.record_end<Statistics::RunTimeStats::StatID::gates_online>();
+  stats.record_network_end<Statistics::RunTimeStats::StatID::gates_online>(comm);
 
   // --------------------------------------------------------------------------
 

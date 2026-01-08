@@ -48,10 +48,20 @@ struct AccumulatedRunTimeStats {
       double,
       boost::accumulators::stats<boost::accumulators::tag::mean, boost::accumulators::tag::median,
                                  boost::accumulators::tag::lazy_variance>>;
+  using network_accumulator_type = boost::accumulators::accumulator_set<
+      std::uint64_t,
+      boost::accumulators::stats<boost::accumulators::tag::mean, boost::accumulators::tag::median,
+                                 boost::accumulators::tag::lazy_variance>>;
 
   std::size_t count_ = 0;
   std::array<accumulator_type, static_cast<std::size_t>(RunTimeStats::StatID::MAX) + 1>
       accumulators_;
+  
+  // Network statistics accumulators for gates_setup and gates_online
+  std::array<network_accumulator_type, static_cast<std::size_t>(RunTimeStats::StatID::MAX) + 1> 
+      bytes_sent_accumulators_;
+  std::array<network_accumulator_type, static_cast<std::size_t>(RunTimeStats::StatID::MAX) + 1>
+      bytes_received_accumulators_;
 
   void add(const RunTimeStats& stats);
   std::string print_human_readable() const;

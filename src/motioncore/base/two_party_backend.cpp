@@ -113,7 +113,7 @@ void TwoPartyBackend::run_preprocessing() {
 }
 
 void TwoPartyBackend::run() {
-  gate_executor_->evaluate_setup_online(run_time_stats_.back());
+  gate_executor_->evaluate_setup_online(run_time_stats_.back(), comm_layer_);
 }
 
 std::optional<MPCProtocol> TwoPartyBackend::convert_via(MPCProtocol src_proto,
