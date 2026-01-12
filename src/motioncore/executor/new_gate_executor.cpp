@@ -211,7 +211,12 @@ void NewGateExecutor::evaluate_setup_online(Statistics::RunTimeStats& stats, Com
 void NewGateExecutor::evaluate_setup_online_multi_threaded(Statistics::RunTimeStats& stats, Communication::CommunicationLayer& comm) {
   stats.record_start<Statistics::RunTimeStats::StatID::evaluate>();
 
+  // Measure preprocessing communication (where most OT setup happens)
+  stats.record_start<Statistics::RunTimeStats::StatID::preprocessing>();
+  stats.record_network_start<Statistics::RunTimeStats::StatID::preprocessing>(comm);
   preprocessing_fctn_();
+  stats.record_end<Statistics::RunTimeStats::StatID::preprocessing>();
+  stats.record_network_end<Statistics::RunTimeStats::StatID::preprocessing>(comm);
 
   if (logger_) {
     logger_->LogInfo(
@@ -241,8 +246,13 @@ void NewGateExecutor::evaluate_setup_online_multi_threaded(Statistics::RunTimeSt
   stats.record_end<Statistics::RunTimeStats::StatID::gates_setup>();
   stats.record_network_end<Statistics::RunTimeStats::StatID::gates_setup>(comm);
 
+  // ------------------------------ between-phase sync ------------------------------
   if (sync_between_setup_and_online_) {
+    stats.record_start<Statistics::RunTimeStats::StatID::gates_sync>();
+    stats.record_network_start<Statistics::RunTimeStats::StatID::gates_sync>(comm);
     sync_fctn_();
+    stats.record_end<Statistics::RunTimeStats::StatID::gates_sync>();
+    stats.record_network_end<Statistics::RunTimeStats::StatID::gates_sync>(comm);
   }
 
   if (logger_) {
@@ -283,7 +293,12 @@ void NewGateExecutor::evaluate_setup_online_multi_threaded(Statistics::RunTimeSt
 void NewGateExecutor::evaluate_setup_online_single_threaded(Statistics::RunTimeStats& stats, Communication::CommunicationLayer& comm) {
   stats.record_start<Statistics::RunTimeStats::StatID::evaluate>();
 
+  // Measure preprocessing communication (where most OT setup happens)
+  stats.record_start<Statistics::RunTimeStats::StatID::preprocessing>();
+  stats.record_network_start<Statistics::RunTimeStats::StatID::preprocessing>(comm);
   preprocessing_fctn_();
+  stats.record_end<Statistics::RunTimeStats::StatID::preprocessing>();
+  stats.record_network_end<Statistics::RunTimeStats::StatID::preprocessing>(comm);
 
   ENCRYPTO::SynchronizedFiberQueue<boost::fibers::fiber> cleanup_channel;
   auto cleanup_fut = boost::fibers::async([&cleanup_channel] {
@@ -316,8 +331,13 @@ void NewGateExecutor::evaluate_setup_online_single_threaded(Statistics::RunTimeS
   stats.record_end<Statistics::RunTimeStats::StatID::gates_setup>();
   stats.record_network_end<Statistics::RunTimeStats::StatID::gates_setup>(comm);
 
+  // ------------------------------ between-phase sync ------------------------------
   if (sync_between_setup_and_online_) {
+    stats.record_start<Statistics::RunTimeStats::StatID::gates_sync>();
+    stats.record_network_start<Statistics::RunTimeStats::StatID::gates_sync>(comm);
     sync_fctn_();
+    stats.record_end<Statistics::RunTimeStats::StatID::gates_sync>();
+    stats.record_network_end<Statistics::RunTimeStats::StatID::gates_sync>(comm);
   }
 
   if (logger_) {

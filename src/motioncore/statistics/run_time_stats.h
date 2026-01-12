@@ -61,6 +61,7 @@ struct RunTimeStats {
     ot_extension_setup,
     preprocessing,  // MTs, OTs etc.
     gates_setup,
+    gates_sync,     // Between-phase synchronization
     gates_online,
     evaluate,
     base_ots,

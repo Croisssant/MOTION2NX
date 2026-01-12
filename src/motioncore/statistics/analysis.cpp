@@ -118,12 +118,20 @@ std::string AccumulatedRunTimeStats::print_human_readable() const {
     //  << format_line("OT Extension Setup", unit, at(accumulators_, StatID::ot_extension_setup),
                     // field_width)
      << "---------------------------------------------------------------------------\n"
-    //  << format_line("Preprocessing Total", unit, at(accumulators_, StatID::preprocessing),
-                    // field_width)
+     << format_line_with_network("Preprocessing Total", unit, 
+                                at(accumulators_, StatID::preprocessing),
+                                at(bytes_sent_accumulators_, StatID::preprocessing),
+                                at(bytes_received_accumulators_, StatID::preprocessing),
+                                field_width)
      << format_line_with_network("Gates Setup", unit, 
                                 at(accumulators_, StatID::gates_setup),
                                 at(bytes_sent_accumulators_, StatID::gates_setup),
                                 at(bytes_received_accumulators_, StatID::gates_setup),
+                                field_width)
+     << format_line_with_network("Gates Sync", unit, 
+                                at(accumulators_, StatID::gates_sync),
+                                at(bytes_sent_accumulators_, StatID::gates_sync),
+                                at(bytes_received_accumulators_, StatID::gates_sync),
                                 field_width)
      << format_line_with_network("Gates Online", unit, 
                                 at(accumulators_, StatID::gates_online),

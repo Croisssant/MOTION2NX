@@ -57,7 +57,8 @@ RunTimeStats::NetworkStats RunTimeStats::sum_transport_stats(const std::vector<C
 template <RunTimeStats::StatID ID>
 void RunTimeStats::record_network_start(Communication::CommunicationLayer& comm) {
   auto transport_stats = comm.get_transport_statistics();
-  network_baselines_[static_cast<std::size_t>(ID)] = sum_transport_stats(transport_stats);
+  auto& baseline = network_baselines_[static_cast<std::size_t>(ID)];
+  baseline = sum_transport_stats(transport_stats);
 }
 
 template <RunTimeStats::StatID ID>
@@ -74,8 +75,12 @@ void RunTimeStats::record_network_end(Communication::CommunicationLayer& comm) {
 }
 
 // Explicit template instantiations for the StatIDs we care about
+template void RunTimeStats::record_network_start<RunTimeStats::StatID::preprocessing>(Communication::CommunicationLayer& comm);
+template void RunTimeStats::record_network_end<RunTimeStats::StatID::preprocessing>(Communication::CommunicationLayer& comm);
 template void RunTimeStats::record_network_start<RunTimeStats::StatID::gates_setup>(Communication::CommunicationLayer& comm);
 template void RunTimeStats::record_network_end<RunTimeStats::StatID::gates_setup>(Communication::CommunicationLayer& comm);
+template void RunTimeStats::record_network_start<RunTimeStats::StatID::gates_sync>(Communication::CommunicationLayer& comm);
+template void RunTimeStats::record_network_end<RunTimeStats::StatID::gates_sync>(Communication::CommunicationLayer& comm);
 template void RunTimeStats::record_network_start<RunTimeStats::StatID::gates_online>(Communication::CommunicationLayer& comm);
 template void RunTimeStats::record_network_end<RunTimeStats::StatID::gates_online>(Communication::CommunicationLayer& comm);
 
@@ -90,8 +95,10 @@ std::string RunTimeStats::print_human_readable() const {
   auto max = *std::max_element(ms.cbegin(), ms.cend());
   auto width = static_cast<std::size_t>(std::ceil(std::log10(max))) + 4;
 
-  // Get network stats for gates_setup and gates_online
+  // Get network stats for all phases
+  auto preprocessing_net = get_network_stats(StatID::preprocessing);
   auto setup_net = get_network_stats(StatID::gates_setup);
+  auto sync_net = get_network_stats(StatID::gates_sync);
   auto online_net = get_network_stats(StatID::gates_online);
 
   std::stringstream ss;
@@ -104,20 +111,39 @@ std::string RunTimeStats::print_human_readable() const {
      << fmt::format("Base OTs            {:{}.3f} ms\n", at(ms, StatID::base_ots), width)
      << fmt::format("OT Extension Setup  {:{}.3f} ms\n", at(ms, StatID::ot_extension_setup), width)
      << fmt::format("-------------------------\n")
-     << fmt::format("Preprocessing Total {:{}.3f} ms\n", at(ms, StatID::preprocessing), width)
+     << fmt::format("Preprocessing Total {:{}.3f} ms", at(ms, StatID::preprocessing), width);
+  
+  // Add network stats for preprocessing if available 
+  if (preprocessing_net.bytes_sent > 0 || preprocessing_net.bytes_received > 0) {
+    ss << fmt::format(" (Sent: {} bytes, Recv: {} bytes)", 
+                      preprocessing_net.bytes_sent, preprocessing_net.bytes_received);
+  }
+  ss << "\n"
      << fmt::format("Gates Setup         {:{}.3f} ms", at(ms, StatID::gates_setup), width);
   
-  // Add network stats for gates_setup if available
+  // Add network stats for gates_setup if available 
   if (setup_net.bytes_sent > 0 || setup_net.bytes_received > 0) {
-    ss << fmt::format(" (Sent: {} bytes, Recv: {} bytes)", setup_net.bytes_sent, setup_net.bytes_received);
+    ss << fmt::format(" (Sent: {} bytes, Recv: {} bytes)", 
+                      setup_net.bytes_sent, setup_net.bytes_received);
   }
   ss << "\n";
+  
+  // Add gates_sync phase
+  if (sync_net.bytes_sent > 0 || sync_net.bytes_received > 0 || at(ms, StatID::gates_sync) > 0) {
+    ss << fmt::format("Gates Sync          {:{}.3f} ms", at(ms, StatID::gates_sync), width);
+    if (sync_net.bytes_sent > 0 || sync_net.bytes_received > 0) {
+      ss << fmt::format(" (Sent: {} bytes, Recv: {} bytes)", 
+                        sync_net.bytes_sent, sync_net.bytes_received);
+    }
+    ss << "\n";
+  }
   
   ss << fmt::format("Gates Online        {:{}.3f} ms", at(ms, StatID::gates_online), width);
   
   // Add network stats for gates_online if available
   if (online_net.bytes_sent > 0 || online_net.bytes_received > 0) {
-    ss << fmt::format(" (Sent: {} bytes, Recv: {} bytes)", online_net.bytes_sent, online_net.bytes_received);
+    ss << fmt::format(" (Sent: {} bytes, Recv: {} bytes)", 
+                      online_net.bytes_sent, online_net.bytes_received);
   }
   ss << "\n";
   
